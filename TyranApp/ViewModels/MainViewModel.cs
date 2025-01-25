@@ -17,6 +17,7 @@ using TyranApp.Network;
 using TyranApp.ViewModels;
 using System.Collections.Generic;
 using System.Xml.Linq;
+using System.Diagnostics;
 
 namespace TyranApp.ViewModels;
 
@@ -25,6 +26,8 @@ public class MainViewModel : ViewModelBase
     Server? server;
     Client? client;
     Node? meNode;
+    IntervalAction? pinger;
+    private bool _autoScroll = true;
     private int _nodeId = 1;
     private int _timeout = 5000;
     private int _leaderCheckInterval = 5000;
@@ -37,8 +40,13 @@ public class MainViewModel : ViewModelBase
     private bool _isActive = false;
     private string _log = "";
 
-    public ObservableCollection<Node> NetworkNodes { get; } = new ObservableCollection<Node>();
+    private bool _connectionInProgress = false;
+    private int _leaderBadPingResponse = 0;
+    private bool _isElectionInProgress = false;
 
+    private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+
+    public ObservableCollection<Node> NetworkNodes { get; } = new ObservableCollection<Node>();
 
     public ReactiveCommand<Unit, Unit> ConnectCommand { get; }
 
@@ -96,20 +104,16 @@ public class MainViewModel : ViewModelBase
         }
     }
 
-    public string Log
+    private ObservableCollection<string> _logs;
+    public ObservableCollection<string> Logs
     {
-        get => _log;
-        set
-        {
-            if (!Dispatcher.UIThread.CheckAccess())
-            {
-                Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _log, value));
-            }
-            else
-            {
-                this.RaiseAndSetIfChanged(ref _log, value);
-            }
-        }
+        get => _logs;
+        set => this.RaiseAndSetIfChanged(ref _logs, value);
+    }
+
+    public bool AutoScroll {
+        get => _autoScroll;
+        set => this.RaiseAndSetIfChanged(ref _autoScroll, value);
     }
 
     public int Timeout
@@ -247,7 +251,13 @@ public class MainViewModel : ViewModelBase
     public MainViewModel()
     {
         ConnectCommand = ReactiveCommand.Create(Connect, outputScheduler: AvaloniaScheduler.Instance);
+        Logs = new ObservableCollection<string>();
         InitializeNetworkAddress();
+        pinger = new IntervalAction(LeaderPing ,LeaderCheckInterval);
+        pinger.Log += (s, e) =>
+        {
+            AddLog($"{e.Message}");
+        };
         meNode = new Node
         {
             NodeId = this.NodeId,
@@ -257,6 +267,60 @@ public class MainViewModel : ViewModelBase
             IsActive = this.IsActive
         };
         NetworkNodes.Add(meNode);
+    }
+
+    private async Task LeaderPing()
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        TimeSpan timeout = TimeSpan.FromMilliseconds(Timeout);
+
+        try
+        {
+            OnlineMessage message = new OnlineMessage( new object[0], OnlineMessage.Command.PING, NodeId);
+            var rpcTask = SendMessageAsync(LeaderAddress, LeaderPort, message);
+
+            if (await Task.WhenAny(rpcTask, Task.Delay(timeout)) == rpcTask)
+            {
+                stopwatch.Stop();
+                var result = await rpcTask;
+                if (result == "!") { 
+                    if(++_leaderBadPingResponse == 3)
+                    {
+                        _leaderBadPingResponse = 0;
+                        _ = Task.Run(() => StartElection());
+                    }
+                }
+            }
+            else
+            {
+                stopwatch.Stop();
+                AddLog($"PING lidera timed out after {stopwatch.ElapsedMilliseconds} ms.");
+                if (++_leaderBadPingResponse == 3)
+                {
+                    _leaderBadPingResponse = 0;
+                    _ = Task.Run(() => StartElection());
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            AddLog($"Error w wysylaniu PING: {ex.Message} (Elapsed time: {stopwatch.ElapsedMilliseconds} ms)");
+        }
+    }
+
+    private void StartElection() {
+        if (_isElectionInProgress)
+        {
+            AddLog("Elekcja juz trwa!");
+        }
+        _isElectionInProgress = true;
+        pinger.Stop();
+        AddLog("Rozpoczynam elekcje.");
+        AddLog("Koniec elekcji.");
+        pinger.Start();
+        _isElectionInProgress = false;
     }
 
     private void Connect()
@@ -395,7 +459,9 @@ public class MainViewModel : ViewModelBase
 
         OnlineMessage message = new OnlineMessage(new object[] { System.Text.Json.JsonSerializer.Serialize(meNode) } , OnlineMessage.Command.CONNECT, NodeId);
 
+        _connectionInProgress = true;
         string response = await SendMessageAsync(LeaderAddress, LeaderPort, message);
+        _connectionInProgress = false;
 
         if (response == "!") {
             AddLog("Error w trakcie wyslania CONNECT!");
@@ -418,6 +484,7 @@ public class MainViewModel : ViewModelBase
 
         IsConnected = true;
         AddLog("Otrzymano odpowiedz na CONNECT. Polaczono z liderem.");
+        pinger.Start();
     }
 
     private async Task<string> HandleMessage(OnlineMessage message)
@@ -430,6 +497,12 @@ public class MainViewModel : ViewModelBase
             return "!";
         }
 
+        if (!IsConnected && !_connectionInProgress)
+        {
+            AddLog($"Odebrano komunikat od ID:{message.SenderId}. Odpowiadam bledem. IsConnected=false!");
+            return "!";
+        }
+
         if (message.Kod == OnlineMessage.Command.CONNECT)
         {
             return (await HandleConnect(message.Param, message.SenderId)).ToString();
@@ -438,6 +511,11 @@ public class MainViewModel : ViewModelBase
         if (message.Kod == OnlineMessage.Command.UPDATE)
         {
             return HandleUpdate(message.Param, message.SenderId).ToString();
+        }
+
+        if (message.Kod == OnlineMessage.Command.PING)
+        {
+            return HandlePing(message.SenderId).ToString();
         }
 
         return response;
@@ -524,6 +602,11 @@ public class MainViewModel : ViewModelBase
         return 0;
     }
 
+    private int HandlePing(int senderId) {
+        AddLog($"Otrzymano wiadomosc PING od {senderId}.");
+        return 0;
+    }
+
     private void InitializeNetworkAddress()
     {
         try
@@ -587,7 +670,14 @@ public class MainViewModel : ViewModelBase
 
     private void AddLog(string message)
     {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss");
-        Log += $"[{timestamp}] {message}\n";
+        _semaphore.Wait();
+        try
+        {
+            var timestamp = DateTime.Now.ToString("HH:mm:ss");
+            Logs.Add($"[{timestamp}] {message}\n");
+        }
+        finally {
+            _semaphore.Release();
+        }
     }
 }

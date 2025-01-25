@@ -4,12 +4,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace TyranApp.Network
+namespace TyranApp
 {
-    internal class LogEventArgs : EventArgs
+    public class LogEventArgs : EventArgs
     {
         public string Message;
-        public LogEventArgs(string message) {
+        public LogEventArgs(string message)
+        {
             Message = message;
         }
     }

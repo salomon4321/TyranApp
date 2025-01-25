@@ -86,9 +86,22 @@
 				<!-- Sekcja logów -->
 				<StackPanel Grid.Column="2" Margin="10" Width="400">
 					<TextBlock Text="Log" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
-					<ScrollViewer VerticalScrollBarVisibility="Auto" Height="400">
-						<TextBox Text="{Binding Log}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"/>
+					<ScrollViewer Name="LogsScrollViewer" Height="400">	
+						<ListBox Name="LogsBox" ItemsSource="{Binding Logs}" MinHeight="400">
+							<ListBox.ItemTemplate>
+								<DataTemplate>
+											<StackPanel Orientation="Vertical" Spacing="5" Margin="3">
+												<TextBlock
+													Text="{Binding}"
+													TextWrapping="Wrap"
+													FontSize="12"
+													Padding="1"/>
+											</StackPanel>
+								</DataTemplate>
+							</ListBox.ItemTemplate>
+							</ListBox>
 					</ScrollViewer>
+					<CheckBox IsChecked="{Binding AutoScroll}" Content="Auto scroll"/>
 				</StackPanel>
 			</Grid>
 
