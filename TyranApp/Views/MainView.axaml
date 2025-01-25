@@ -5,12 +5,93 @@
              xmlns:vm="clr-namespace:TyranApp.ViewModels"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="TyranApp.Views.MainView"
+			 xmlns:controls="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls"
              x:DataType="vm:MainViewModel">
-  <Design.DataContext>
+	<Design.DataContext>
     <!-- This only sets the DataContext for the previewer in an IDE,
          to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
     <vm:MainViewModel />
   </Design.DataContext>
 
-  <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+	<ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+		<Grid>
+			<Grid.RowDefinitions>
+				<RowDefinition Height="Auto"/>
+				<RowDefinition Height="*"/>
+			</Grid.RowDefinitions>
+
+			<!-- Nagłówek aplikacji -->
+			<TextBlock Grid.Row="0" Text="TyranApp - Algorytm tyrana"
+					   HorizontalAlignment="Center" FontSize="20" FontWeight="Bold" Margin="10"/>
+
+			<!-- Główna zawartość -->
+			<Grid Grid.Row="1" Margin="10">
+				<Grid.ColumnDefinitions>
+					<ColumnDefinition Width="3*"/>
+					<ColumnDefinition Width="*"/>
+				</Grid.ColumnDefinitions>
+
+				<!-- Sekcja danych -->
+				<StackPanel Grid.Column="0" Margin="10">
+
+					<!-- Pole Node ID -->
+					<TextBlock Text="Node ID:" Margin="5"/>
+					<controls:NumericUpDown Value="{Binding NodeId}" Watermark="Enter node ID" Minimum="1" Increment="1" IsEnabled="{Binding !IsConnected}"/>
+
+					<!-- Pole Timeout -->
+					<TextBlock Text="Timeout (ms):" Margin="5"/>
+					<TextBox Text="{Binding Timeout}" Watermark="Enter Timeout (e.g., 1000)" IsEnabled="{Binding !IsConnected}"/>
+
+					<!-- Pole Interval -->
+					<TextBlock Text="Leader check interval (ms):" Margin="5"/>
+					<TextBox Text="{Binding LeaderCheckInterval}" Watermark="Enter interval (e.g., 1000)" IsEnabled="{Binding !IsConnected}"/>
+
+					<!-- Pole Address -->
+					<TextBlock Text="IP Address:" Margin="5"/>
+					<TextBox Text="{Binding NetworkAddress}" Watermark="Enter IP Address" IsEnabled="{Binding !IsConnected}"/>
+
+					<!-- Pole Port -->
+					<TextBlock Text="Port:" Margin="5"/>
+					<controls:NumericUpDown Value="{Binding NetworkPort}" Watermark="Enter port" Minimum="1" Maximum="65535" Increment="1" IsEnabled="{Binding !IsConnected}"/>
+
+					<!-- Pole Address Lidera -->
+					<TextBlock Text="Leader IP Address:" Margin="5"/>
+					<TextBox Text="{Binding LeaderAddress}" Watermark="Enter leader IP Address" IsEnabled="{Binding !IsConnected}"/>
+
+					<!-- Pole Port Lidera -->
+					<TextBlock Text="Leader Port:" Margin="5"/>
+					<controls:NumericUpDown Value="{Binding LeaderPort}" Watermark="Enter leader port" Minimum="1" Maximum="65535" Increment="1" IsEnabled="{Binding !IsConnected}"/>
+					<CheckBox IsChecked="{Binding IsActive}" Content="Active"/>
+					<!-- Lista nodów -->
+					<ListBox ItemsSource="{Binding NetworkNodes}" Height="200" Margin="0,5">
+						<ListBox.ItemTemplate>
+							<DataTemplate>
+								<StackPanel Orientation="Horizontal" Spacing="10" Background="{Binding BackgroundColor}">
+									<TextBlock>
+										<Run Text="{Binding NodeId}" FontWeight="Bold" FontSize="16"/>
+										<Run Text=":" FontSize="14"/>
+										<Run Text="{Binding IpAddress}" FontSize="14"/>
+										<Run Text=":" FontSize="14"/>
+										<Run Text="{Binding Port}" FontSize="14"/>
+									</TextBlock>
+								</StackPanel>
+							</DataTemplate>
+						</ListBox.ItemTemplate>
+					</ListBox>
+
+					<!-- Przycisk Connect -->
+					<Button Content="Connect" Command="{Binding ConnectCommand}" Margin="0,10" IsEnabled="{Binding ConnectionAvailable}"/>
+				</StackPanel>
+
+				<!-- Sekcja logów -->
+				<StackPanel Grid.Column="2" Margin="10" Width="400">
+					<TextBlock Text="Log" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+					<ScrollViewer VerticalScrollBarVisibility="Auto" Height="400">
+						<TextBox Text="{Binding Log}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"/>
+					</ScrollViewer>
+				</StackPanel>
+			</Grid>
+
+		</Grid>
+	</ScrollViewer>
 </UserControl>
