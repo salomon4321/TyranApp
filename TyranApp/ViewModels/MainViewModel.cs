@@ -63,7 +63,6 @@ public class MainViewModel : ViewModelBase
         get => _isConnected;
         set
         {
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _isConnected, value));
@@ -72,6 +71,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _isConnected, value);
             }
+            ValidateForm();
         }
     }
 
@@ -84,7 +84,6 @@ public class MainViewModel : ViewModelBase
             {
                 meNode.NodeId = value;
             }
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _nodeId, value));
@@ -93,6 +92,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _nodeId, value);
             }
+            ValidateForm();
         }
     }
 
@@ -117,7 +117,6 @@ public class MainViewModel : ViewModelBase
         get => _timeout;
         set
         {
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _timeout, value));
@@ -126,6 +125,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _timeout, value);
             }
+            ValidateForm();
         }
     }
 
@@ -134,7 +134,6 @@ public class MainViewModel : ViewModelBase
         get => _leaderCheckInterval;
         set
         {
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _leaderCheckInterval, value));
@@ -143,6 +142,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _leaderCheckInterval, value);
             }
+            ValidateForm();
         }
     }
 
@@ -155,7 +155,6 @@ public class MainViewModel : ViewModelBase
             {
                 meNode.IpAddress = value;
             }
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _networkAddress, value));
@@ -164,6 +163,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _networkAddress, value);
             }
+            ValidateForm();
         }
     }
 
@@ -176,7 +176,6 @@ public class MainViewModel : ViewModelBase
             {
                 meNode.Port = value;
             }
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _networkPort, value));
@@ -185,6 +184,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _networkPort, value);
             }
+            ValidateForm();
         }
     }
 
@@ -193,7 +193,6 @@ public class MainViewModel : ViewModelBase
         get => _leaderAddress;
         set
         {
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _leaderAddress, value));
@@ -202,6 +201,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _leaderAddress, value);
             }
+            ValidateForm();
         }
     }
 
@@ -210,7 +210,6 @@ public class MainViewModel : ViewModelBase
         get => _leaderPort;
         set
         {
-            ValidateForm();
             if (!Dispatcher.UIThread.CheckAccess())
             {
                 Dispatcher.UIThread.Post(() => this.RaiseAndSetIfChanged(ref _leaderPort, value));
@@ -219,6 +218,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _leaderPort, value);
             }
+            ValidateForm();
         }
     }
 
@@ -227,7 +227,6 @@ public class MainViewModel : ViewModelBase
         get => _isActive;
         set
         {
-            ValidateForm();
             if (meNode != null)
             {
                 meNode.IsActive = value;
@@ -241,6 +240,7 @@ public class MainViewModel : ViewModelBase
             {
                 this.RaiseAndSetIfChanged(ref _isActive, value);
             }
+            ValidateForm();
         }
     }
 
@@ -284,9 +284,9 @@ public class MainViewModel : ViewModelBase
             AddLog($"{e.Message}");
         };
 
-        server.RequestReceived += async (s, e) =>
+        server.RequestReceived += (s, e) =>
         {
-            var response = await HandleMessage(e.Message);
+            var response = HandleMessage(e.Message).GetAwaiter().GetResult();
             e.ResponseData = response;
         };
 
@@ -368,19 +368,13 @@ public class MainViewModel : ViewModelBase
         await Task.WhenAll(tasks);
     }
 
-    private async Task SendListUpdateToNode(Node receiver)
+    private void SendListUpdateToNode(Node receiver)
     {
-
-
-        var tasks = new List<Task>();
-
         foreach (var node in NetworkNodes)
         {
             if (node == meNode) { continue; }
-            tasks.Add(Task.Run(() => SendUpdateToNode(node, receiver)));
+            SendUpdateToNode(node, receiver).GetAwaiter().GetResult();
         }
-
-        await Task.WhenAll(tasks);
     }
 
     private async void ConnectToLeader()
@@ -476,7 +470,7 @@ public class MainViewModel : ViewModelBase
         AddLog($"Odebrano komunikat CONNECT od ID:{senderId}. Dodano do sieci.");
         await SendUpdateToNode(meNode, sender);
         await SendUpdateToNodesOnList(sender);
-        await SendListUpdateToNode(sender);
+        SendListUpdateToNode(sender);
         return 0;
     }
 
@@ -578,15 +572,16 @@ public class MainViewModel : ViewModelBase
 
     private void ValidateForm()
     {
-        if (IsConnected == true) ConnectionAvailable = false;
-        if (NodeId < 0) ConnectionAvailable = false;
-        if (NetworkAddress.Equals(string.Empty)) ConnectionAvailable = false;
-        if (NetworkPort < 1 || NetworkPort > 65535) ConnectionAvailable = false;
-        if (LeaderAddress.Equals(string.Empty)) ConnectionAvailable = false;
-        if (LeaderPort < 1 || LeaderPort > 65535) ConnectionAvailable = false;
-        if (LeaderCheckInterval < 1) ConnectionAvailable = false;
-        if (Timeout < 1) ConnectionAvailable = false;
-        if (IsActive == false) ConnectionAvailable = false;
+        ConnectionAvailable = false;
+        if (IsConnected == true) return;
+        if (NodeId < 0) return;
+        if (NetworkAddress.Equals(string.Empty)) return;
+        if (NetworkPort < 1 || NetworkPort > 65535) return;
+        if (LeaderAddress.Equals(string.Empty)) return;
+        if (LeaderPort < 1 || LeaderPort > 65535) return;
+        if (LeaderCheckInterval < 1) return;
+        if (Timeout < 1) return;
+        //if (IsActive == false) return;
         ConnectionAvailable = true;
     }
 

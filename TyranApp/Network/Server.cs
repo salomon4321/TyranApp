@@ -52,6 +52,7 @@ namespace TyranApp.Network
                     }
                     finally { 
                         serverSocket.Close();
+                        AddLog($"Zamknieto socket serverowy!");
                     }
                 });
 
@@ -76,9 +77,10 @@ namespace TyranApp.Network
 
                     var receivedJson = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     var receivedCorrection = bytesRead > 25 ? receivedJson.Substring(0, 25) + "..." : receivedJson;
-                    AddLog($"Otrzymano wiadomość: {receivedCorrection}");
-
                     var receivedMessage = System.Text.Json.JsonSerializer.Deserialize<OnlineMessage>(receivedJson);
+                    int messId = receivedMessage != null ? receivedMessage.MessId : -2;
+                    AddLog($"Otrzymano messId: {messId}. Data: {receivedCorrection}");
+
                     MessageReceivedArgs args = new MessageReceivedArgs(receivedMessage);
                     RequestReceived.Invoke(this, args);
 
