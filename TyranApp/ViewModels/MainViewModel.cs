@@ -295,7 +295,9 @@ public class MainViewModel : ViewModelBase
                         _leaderBadPingResponse = 0;
                         _ = Task.Run(() => StartElection(leader.NodeId));
                     }
+                    return;
                 }
+                _leaderBadPingResponse = 0;
             }
             else
             {
@@ -334,7 +336,6 @@ public class MainViewModel : ViewModelBase
         }
 
         _isElectionInProgress = true;
-        //pinger.Stop();
         AddLog("Rozpoczynam elekcje.");
 
         NetworkNodes.First(node => node.IsLeader == true).IsActive = false;
@@ -398,16 +399,6 @@ public class MainViewModel : ViewModelBase
             LeaderAddress = meNode.IpAddress;
             LeaderPort = meNode.Port;
             await SendNewElect();
-            //Deaktywacja wezlow ktore nie odpowiedzialy na startelekcji
-            /*foreach (var id in results) {
-                if (id < 0) { continue; }
-                NetworkNodes.First(node => node.NodeId == id).IsActive = false;
-            }
-            foreach (var node in NetworkNodes) { 
-                if(node == meNode) { continue; }
-                SendListUpdateToNode(node);
-            }
-            AddLog("Zaktualizowalem wszystkim liste wezlow.");*/
         }
         else
         {
@@ -417,8 +408,21 @@ public class MainViewModel : ViewModelBase
 
         AddLog("Koniec elekcji.");
         _leaderBadPingResponse = 0;
-        //pinger.Start();
         _isElectionInProgress = false;
+
+        if (meNode.IsLeader)
+        {
+            //Deaktywacja wezlow ktore nie odpowiedzialy na startelekcji
+            foreach (var id in results) {
+                if (id < 0) { continue; }
+                NetworkNodes.First(node => node.NodeId == id).IsActive = false;
+            }
+            foreach (var node in NetworkNodes) { 
+                if(node == meNode) { continue; }
+                SendListUpdateToNode(node);
+            }
+            AddLog("Zaktualizowalem wszystkim liste wezlow.");
+        }
     }
 
     private void Connect()
