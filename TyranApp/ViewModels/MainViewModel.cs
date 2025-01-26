@@ -18,6 +18,7 @@ using TyranApp.ViewModels;
 using System.Collections.Generic;
 using System.Xml.Linq;
 using System.Diagnostics;
+using System.ComponentModel.DataAnnotations;
 
 namespace TyranApp.ViewModels;
 
@@ -43,6 +44,7 @@ public class MainViewModel : ViewModelBase
     private bool _connectionInProgress = false;
     private int _leaderBadPingResponse = 0;
     private bool _isElectionInProgress = false;
+    private bool _anyResponseFromElection = false;
 
     private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
@@ -271,6 +273,11 @@ public class MainViewModel : ViewModelBase
 
     private async Task LeaderPing()
     {
+        if (meNode.IsLeader)
+        {
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
 
         TimeSpan timeout = TimeSpan.FromMilliseconds(Timeout);
@@ -278,17 +285,19 @@ public class MainViewModel : ViewModelBase
         try
         {
             OnlineMessage message = new OnlineMessage( new object[0], OnlineMessage.Command.PING, NodeId);
-            var rpcTask = SendMessageAsync(LeaderAddress, LeaderPort, message);
+            var leader = NetworkNodes.First(node => node.IsLeader == true);
+            var rpcTask = SendMessageAsync(leader.IpAddress, leader.Port, message);
 
             if (await Task.WhenAny(rpcTask, Task.Delay(timeout)) == rpcTask)
             {
                 stopwatch.Stop();
                 var result = await rpcTask;
                 if (result == "!") { 
+                    AddLog($"Otrzymano odpowiedz na PING do lidera. Blad: !");
                     if(++_leaderBadPingResponse == 3)
                     {
                         _leaderBadPingResponse = 0;
-                        _ = Task.Run(() => StartElection());
+                        _ = Task.Run(() => StartElection(leader.NodeId));
                     }
                 }
             }
@@ -299,7 +308,7 @@ public class MainViewModel : ViewModelBase
                 if (++_leaderBadPingResponse == 3)
                 {
                     _leaderBadPingResponse = 0;
-                    _ = Task.Run(() => StartElection());
+                    _ = Task.Run(() => StartElection(leader.NodeId));
                 }
             }
         }
@@ -310,16 +319,84 @@ public class MainViewModel : ViewModelBase
         }
     }
 
-    private void StartElection() {
+    private async Task StartElection(int leaderId) {
         if (_isElectionInProgress)
         {
             AddLog("Elekcja juz trwa!");
+            return;
         }
+        
+        if (meNode.IsLeader) {
+            AddLog("Nie rozpoczne elekcji. Jestem liderem");
+            return;
+        }
+
         _isElectionInProgress = true;
         pinger.Stop();
         AddLog("Rozpoczynam elekcje.");
+
+        NetworkNodes.First(node => node.IsLeader == true).IsActive = false;
+        NetworkNodes.First(node => node.IsLeader == true).IsLeader = false;
+
+        List<Task> tasks = new List<Task>();
+
+        foreach (var node in NetworkNodes) {
+            if(node.NodeId <= NodeId) { continue; }
+            var task = Task.Run(async () => {
+                var stopwatch = Stopwatch.StartNew();
+                TimeSpan timeout = TimeSpan.FromMilliseconds(Timeout);
+                try
+                {          
+                    OnlineMessage message = new OnlineMessage(new object[] { leaderId }, OnlineMessage.Command.STARTELECT, NodeId);
+                    var rpcTask = SendMessageAsync(node.IpAddress, node.Port, message);
+                    if (await Task.WhenAny(rpcTask, Task.Delay(timeout)) == rpcTask)
+                    {
+                        stopwatch.Stop();
+                        var result = await rpcTask;
+                        if (result == "!")
+                        {
+                            AddLog($"Blad wsylania STARTELECT do nodeID: {node.NodeId}.");
+                            return;
+                        }
+
+                        var resultCode = int.Parse(result);
+                        if (resultCode < 0)
+                        {
+                            AddLog($"Otrzymano odpowiedz na STARTELECT od nodeID: {node.NodeId}. Blad: {resultCode}");
+                        }
+                        else { 
+                            AddLog($"Otrzymano odpowiedz na STARTELECT od nodeID: {node.NodeId}");
+                        }
+
+                        _anyResponseFromElection = true;
+                    }
+                    else
+                    {
+                        stopwatch.Stop();
+                        AddLog($"STARTELECT do nodeID: {node.NodeId} timed out after {stopwatch.ElapsedMilliseconds} ms.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    stopwatch.Stop();
+                    AddLog($"Error w wysylaniu STARTELECT: {ex.Message} (Elapsed time: {stopwatch.ElapsedMilliseconds} ms)");
+                }
+            });
+            tasks.Add(task);
+        }
+
+        await Task.WhenAll(tasks);
+
+        if (!_anyResponseFromElection) {
+            AddLog("Brak odpowiedzi od wyzszych nodeID. Zostalem liderem.");
+            meNode.IsLeader = true;
+            LeaderAddress = meNode.IpAddress;
+            LeaderPort = meNode.Port;
+            await SendNewElect();
+        }
+
         AddLog("Koniec elekcji.");
-        pinger.Start();
+        //pinger.Start();
         _isElectionInProgress = false;
     }
 
@@ -385,6 +462,33 @@ public class MainViewModel : ViewModelBase
         };
 
         AddLog($"Zainicjowano klienta.");
+    }
+
+    private async Task SendNewElect() {
+        List<Task> tasks = new List<Task>();
+        OnlineMessage message = new OnlineMessage(new object[0], OnlineMessage.Command.NEWELECT, NodeId);
+
+        foreach (var node in NetworkNodes) {
+            if (node.NodeId >= NodeId) { continue; }
+            var task = Task.Run(async () => {
+                var response = await SendMessageAsync(node.IpAddress, node.Port, message);
+                if (response == "!") {
+                    AddLog($"Error w trakcie wyslania NEWELECT do nodeID:{node.NodeId}!");
+                    return;
+                }
+
+                var resultCode = int.Parse(response);
+                if (resultCode < 0) {
+                    AddLog($"Otrzymano odpowiedz na NEWELECT od nodeID: {node.NodeId}. Blad: {resultCode}");
+                    return;
+                }
+
+                AddLog($"Otrzymano odpowiedz na NEWELECT od nodeID: {node.NodeId}");
+            });
+            tasks.Add(task);
+        }
+
+        await Task.WhenAll(tasks);
     }
 
     private async Task<string> SendMessageAsync(string address, int port, OnlineMessage message)
@@ -472,6 +576,7 @@ public class MainViewModel : ViewModelBase
         if (responseCode > 0) {
             AddLog($"Otrzymano odpowiedz na CONNECT. Kolizja ID. Zmiana nodeID: {responseCode}");
             NodeId = responseCode;
+            meNode.NodeId = responseCode;
             AddLog("Reconnecting");
             ConnectToLeader();
             return;
@@ -518,6 +623,16 @@ public class MainViewModel : ViewModelBase
             return HandlePing(message.SenderId).ToString();
         }
 
+        if (message.Kod == OnlineMessage.Command.STARTELECT)
+        {
+            return HandleStartElect(message.Param, message.SenderId).ToString();
+        }
+
+        if (message.Kod == OnlineMessage.Command.NEWELECT)
+        {
+            return HandleNewElect(message.SenderId).ToString();
+        }
+
         return response;
     }
 
@@ -544,11 +659,11 @@ public class MainViewModel : ViewModelBase
             return senderId;
         }
 
-        NetworkNodes.Add(sender);
         AddLog($"Odebrano komunikat CONNECT od ID:{senderId}. Dodano do sieci.");
         await SendUpdateToNode(meNode, sender);
         await SendUpdateToNodesOnList(sender);
         SendListUpdateToNode(sender);
+        NetworkNodes.Add(sender);
         return 0;
     }
 
@@ -604,6 +719,62 @@ public class MainViewModel : ViewModelBase
 
     private int HandlePing(int senderId) {
         AddLog($"Otrzymano wiadomosc PING od {senderId}.");
+        return 0;
+    }
+
+    private int HandleStartElect(object[] param, int senderId) {
+        if (meNode.IsLeader) {
+            AddLog($"Otrzymano STARTELECT od nodeID: {senderId}. Blad: Jestem liderem!");
+            return -1;
+        }
+
+        int leaderId;
+
+        try
+        {
+            leaderId = int.Parse(param[0].ToString());
+        }
+        catch (Exception ex) {
+            AddLog($"ERROR!!!!! Mam cie kurwo: {ex.Message}");
+            return  -8888;
+        }
+
+        if (leaderId == 0) {
+            AddLog($"Otrzymano STARTELECT od nodeID: {senderId}. Blad: Zly parametr!");
+            return -2;
+        }
+
+        var leaderDead = NetworkNodes.First(node => node.NodeId == leaderId);
+
+        if (leaderDead == null) {
+            AddLog($"Otrzymano STARTELECT od nodeID: {senderId}. Blad: Nie znaleziono nodeID: {leaderId}");
+            return -3;
+        }
+
+        if (!leaderDead.IsActive) {
+            AddLog($"Otrzymano STARTELECT od nodeID: {senderId}. Blad: Lider nodeID: {leaderId} juz nie zyje!");
+            return -4;
+        }
+
+        AddLog($"Otrzymano STARTELECT od nodeID: {senderId}");
+        _ = Task.Run(() => StartElection(leaderDead.NodeId));
+        return 0;
+    }
+
+    private int HandleNewElect(int senderId) {
+        var newLeader = NetworkNodes.First(node => node.NodeId == senderId);
+        if (newLeader == null) {
+            AddLog($"Otrzymano NEWELECT od nodeID: {senderId}. Blad: Brak takiego node'a na liscie!");
+            return -1;
+        }
+
+        if (meNode.IsLeader) { 
+            meNode.IsLeader = false;
+        }
+
+        newLeader.IsLeader = true;
+        LeaderAddress = newLeader.IpAddress;
+        LeaderPort = newLeader.Port;
         return 0;
     }
 
@@ -674,7 +845,7 @@ public class MainViewModel : ViewModelBase
         try
         {
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
-            Logs.Add($"[{timestamp}] {message}\n");
+            Logs.Add($"NR:{Logs.Count} [{timestamp}] {message}\n");
         }
         finally {
             _semaphore.Release();

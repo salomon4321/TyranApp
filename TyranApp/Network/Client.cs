@@ -28,6 +28,7 @@ namespace TyranApp.Network
 
             message.MessId = messId;
             var messageJson = System.Text.Json.JsonSerializer.Serialize(message);
+            var messageShort = messageJson.Length > 50 ? messageJson.Substring(0, 50) + "..." : messageJson;
             var messageBytes = Encoding.UTF8.GetBytes(messageJson);
             var buffer = new byte[1024];
             
@@ -36,7 +37,7 @@ namespace TyranApp.Network
             try
             {
                 await clientSocket.SendAsync(messageBytes, SocketFlags.None);
-                AddLog($"Wysłano wiadomość do {peerKey}. messID: {messId}");
+                AddLog($"Wysłano wiadomość do {peerKey}. Message: {messageShort} messID: {messId}");
 
                 int bytesRead = await clientSocket.ReceiveAsync(buffer, SocketFlags.None);
                 if (bytesRead == 0) return "!";

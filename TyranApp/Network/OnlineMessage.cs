@@ -12,7 +12,9 @@ namespace TyranApp.Network
         {
             CONNECT = 0,
             UPDATE,
-            PING
+            PING,
+            STARTELECT,
+            NEWELECT
         }
         public Command Kod {  get; set; }
         public object[] Param { get; set; }

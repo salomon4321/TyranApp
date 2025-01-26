@@ -76,7 +76,7 @@ namespace TyranApp.Network
                     if (bytesRead == 0) break;
 
                     var receivedJson = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    var receivedCorrection = bytesRead > 25 ? receivedJson.Substring(0, 25) + "..." : receivedJson;
+                    var receivedCorrection = bytesRead > 50 ? receivedJson.Substring(0, 50) + "..." : receivedJson;
                     var receivedMessage = System.Text.Json.JsonSerializer.Deserialize<OnlineMessage>(receivedJson);
                     int messId = receivedMessage != null ? receivedMessage.MessId : -2;
                     AddLog($"Otrzymano messId: {messId}. Data: {receivedCorrection}");

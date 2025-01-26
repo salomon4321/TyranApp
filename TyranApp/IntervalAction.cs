@@ -10,7 +10,6 @@
         private readonly int _intervalMs;    // Interval in milliseconds
         private CancellationTokenSource _cts; // Token to cancel the loop
         private Task _runningTask;           // Task running the loop
-        private bool _isPaused;              // Tracks if the action is paused
 
         public event EventHandler<LogEventArgs> Log;
 
@@ -23,16 +22,11 @@
         // Starts or resumes the interval execution
         public void Start()
         {
-            if (_runningTask != null && !_isPaused)
+            if (_runningTask != null)
             {
                 throw new InvalidOperationException("IntervalAction is already running.");
             }
 
-            if (_isPaused)
-            {
-                _isPaused = false; // Resume execution
-            }
-            else
             {
                 _cts = new CancellationTokenSource();
                 _runningTask = Task.Run(() => RunAsync(_cts.Token));
@@ -47,7 +41,6 @@
                 _cts.Cancel();
                 _runningTask?.Wait(); // Wait for the task to finish gracefully
                 _runningTask = null;
-                _isPaused = true; // Mark as paused
             }
         }
 
