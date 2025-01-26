@@ -419,6 +419,7 @@ public class MainViewModel : ViewModelBase
             }
             foreach (var node in NetworkNodes) { 
                 if(node == meNode) { continue; }
+                if(!node.IsActive) {  continue; }
                 SendListUpdateToNode(node);
             }
             AddLog("Zaktualizowalem wszystkim liste wezlow.");
@@ -815,6 +816,7 @@ public class MainViewModel : ViewModelBase
 
         AddLog($"Otrzymano NEWELECT od nodeID: {senderId}.");
         newLeader.IsLeader = true;
+        newLeader.IsActive = true;
         LeaderAddress = newLeader.IpAddress;
         LeaderPort = newLeader.Port;
         _leaderBadPingResponse = 0;
