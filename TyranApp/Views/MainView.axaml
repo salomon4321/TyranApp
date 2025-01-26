@@ -61,6 +61,7 @@
 					<!-- Pole Port Lidera -->
 					<TextBlock Text="Leader Port:" Margin="5"/>
 					<controls:NumericUpDown Value="{Binding LeaderPort}" Watermark="Enter leader port" Minimum="1" Maximum="65535" Increment="1" IsEnabled="{Binding !IsConnected}"/>
+					<!-- Przycisk IsActive -->
 					<CheckBox IsChecked="{Binding IsActive}" Content="Active"/>
 					<!-- Lista nodów -->
 					<ListBox ItemsSource="{Binding NetworkNodes}" Height="200" Margin="0,5">

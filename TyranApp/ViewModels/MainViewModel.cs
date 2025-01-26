@@ -331,6 +331,12 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
+        if(!NetworkNodes.First(node => node.NodeId == leaderId).IsLeader)
+        {
+            AddLog($"Nie rozpoczne elekcji. nodeID: {leaderId} nie jest moim liderem!");
+            return; 
+        }
+
         _isElectionInProgress = true;
         pinger.Stop();
         AddLog("Rozpoczynam elekcje.");
@@ -338,11 +344,11 @@ public class MainViewModel : ViewModelBase
         NetworkNodes.First(node => node.IsLeader == true).IsActive = false;
         NetworkNodes.First(node => node.IsLeader == true).IsLeader = false;
 
-        List<Task> tasks = new List<Task>();
+        List<Task<int>> tasks = new List<Task<int>>();
 
         foreach (var node in NetworkNodes) {
             if(node.NodeId <= NodeId) { continue; }
-            var task = Task.Run(async () => {
+            var task = Task.Run(async Task<int> () => {
                 var stopwatch = Stopwatch.StartNew();
                 TimeSpan timeout = TimeSpan.FromMilliseconds(Timeout);
                 try
@@ -356,7 +362,7 @@ public class MainViewModel : ViewModelBase
                         if (result == "!")
                         {
                             AddLog($"Blad wsylania STARTELECT do nodeID: {node.NodeId}.");
-                            return;
+                            return node.NodeId;
                         }
 
                         var resultCode = int.Parse(result);
@@ -369,23 +375,26 @@ public class MainViewModel : ViewModelBase
                         }
 
                         _anyResponseFromElection = true;
+                        return -node.NodeId;
                     }
                     else
                     {
                         stopwatch.Stop();
                         AddLog($"STARTELECT do nodeID: {node.NodeId} timed out after {stopwatch.ElapsedMilliseconds} ms.");
+                        return node.NodeId;
                     }
                 }
                 catch (Exception ex)
                 {
                     stopwatch.Stop();
                     AddLog($"Error w wysylaniu STARTELECT: {ex.Message} (Elapsed time: {stopwatch.ElapsedMilliseconds} ms)");
+                    return node.NodeId;
                 }
             });
             tasks.Add(task);
         }
 
-        await Task.WhenAll(tasks);
+        var results = await Task.WhenAll(tasks);
 
         if (!_anyResponseFromElection) {
             AddLog("Brak odpowiedzi od wyzszych nodeID. Zostalem liderem.");
@@ -393,10 +402,26 @@ public class MainViewModel : ViewModelBase
             LeaderAddress = meNode.IpAddress;
             LeaderPort = meNode.Port;
             await SendNewElect();
+            //Deaktywacja wezlow ktore nie odpowiedzialy na startelekcji
+            /*foreach (var id in results) {
+                if (id < 0) { continue; }
+                NetworkNodes.First(node => node.NodeId == id).IsActive = false;
+            }
+            foreach (var node in NetworkNodes) { 
+                if(node == meNode) { continue; }
+                SendListUpdateToNode(node);
+            }
+            AddLog("Zaktualizowalem wszystkim liste wezlow.");*/
+        }
+        else
+        {
+            _anyResponseFromElection = false;
         }
 
+
         AddLog("Koniec elekcji.");
-        //pinger.Start();
+        _leaderBadPingResponse = 0;
+        pinger.Start();
         _isElectionInProgress = false;
     }
 
@@ -473,7 +498,8 @@ public class MainViewModel : ViewModelBase
             var task = Task.Run(async () => {
                 var response = await SendMessageAsync(node.IpAddress, node.Port, message);
                 if (response == "!") {
-                    AddLog($"Error w trakcie wyslania NEWELECT do nodeID:{node.NodeId}!");
+                    AddLog($"Error w trakcie wyslania NEWELECT do nodeID:{node.NodeId}! Uznaje go za nieaktywny!");
+                    node.IsActive = false;
                     return;
                 }
 
@@ -768,13 +794,28 @@ public class MainViewModel : ViewModelBase
             return -1;
         }
 
+        pinger?.Stop();
+
         if (meNode.IsLeader) { 
             meNode.IsLeader = false;
         }
 
+        if (NetworkNodes.Any(node => node.IsLeader)) {
+            var currentLeader = NetworkNodes.First(node => node.IsLeader);
+            currentLeader.IsLeader = false;
+            currentLeader.IsActive = false;
+            if (currentLeader.NodeId > newLeader.NodeId) {
+                //AddLog($"Otrzymano NEWELECT od nodeID: {senderId}. Blad: Nowy lider ma mniejszy ID! curr: {currentLeader.NodeId}; nowy: {newLeader.NodeId}");
+                //return -2;
+            }
+        }
+
+        AddLog($"Otrzymano NEWELECT od nodeID: {senderId}.");
         newLeader.IsLeader = true;
         LeaderAddress = newLeader.IpAddress;
         LeaderPort = newLeader.Port;
+        _leaderBadPingResponse = 0;
+        pinger?.Start();
         return 0;
     }
 
@@ -850,5 +891,9 @@ public class MainViewModel : ViewModelBase
         finally {
             _semaphore.Release();
         }
+    }
+
+    private void Reset() { 
+        
     }
 }
