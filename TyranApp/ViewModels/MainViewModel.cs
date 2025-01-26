@@ -255,11 +255,7 @@ public class MainViewModel : ViewModelBase
         ConnectCommand = ReactiveCommand.Create(Connect, outputScheduler: AvaloniaScheduler.Instance);
         Logs = new ObservableCollection<string>();
         InitializeNetworkAddress();
-        pinger = new IntervalAction(LeaderPing ,LeaderCheckInterval);
-        pinger.Log += (s, e) =>
-        {
-            AddLog($"{e.Message}");
-        };
+        
         meNode = new Node
         {
             NodeId = this.NodeId,
@@ -338,7 +334,7 @@ public class MainViewModel : ViewModelBase
         }
 
         _isElectionInProgress = true;
-        pinger.Stop();
+        //pinger.Stop();
         AddLog("Rozpoczynam elekcje.");
 
         NetworkNodes.First(node => node.IsLeader == true).IsActive = false;
@@ -421,7 +417,7 @@ public class MainViewModel : ViewModelBase
 
         AddLog("Koniec elekcji.");
         _leaderBadPingResponse = 0;
-        pinger.Start();
+        //pinger.Start();
         _isElectionInProgress = false;
     }
 
@@ -615,6 +611,11 @@ public class MainViewModel : ViewModelBase
 
         IsConnected = true;
         AddLog("Otrzymano odpowiedz na CONNECT. Polaczono z liderem.");
+        pinger = new IntervalAction(LeaderPing, LeaderCheckInterval);
+        pinger.Log += (s, e) =>
+        {
+            AddLog($"{e.Message}");
+        };
         pinger.Start();
     }
 
@@ -794,8 +795,6 @@ public class MainViewModel : ViewModelBase
             return -1;
         }
 
-        pinger?.Stop();
-
         if (meNode.IsLeader) { 
             meNode.IsLeader = false;
         }
@@ -815,7 +814,6 @@ public class MainViewModel : ViewModelBase
         LeaderAddress = newLeader.IpAddress;
         LeaderPort = newLeader.Port;
         _leaderBadPingResponse = 0;
-        pinger?.Start();
         return 0;
     }
 
